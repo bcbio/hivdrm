@@ -1,0 +1,6 @@
+name: hivdrm
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - biopython
