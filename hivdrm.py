@@ -15,6 +15,7 @@ from Bio import SeqIO
 from Bio.SeqIO import FastaIO
 
 hivdrm_work_dir = "_hivdrm_tmp"
+s5_prefix = "s5_demultiplex"
 
 def s1_rc_and_concatenate(r1, r2):
     """Reverse complement r2 and merge with r1 into a long amplicon"""
@@ -80,7 +81,7 @@ def s5_demultiplex_samples(file_fa, barcodes_csv):
     """ demultiplex samples based on dual barcodes """
     samples = {}
     result_file = "step5.stats.csv"
-    with open(barcodes_csv) as csvfile:
+    with open(barcodes_csv, "rt") as csvfile:
         csvreader = csv.reader(csvfile)
         n_row = len(csvfile.readlines())
         csvfile.seek(0)
@@ -104,7 +105,6 @@ def s5_demultiplex_samples(file_fa, barcodes_csv):
             combined_barcode = f_barcode + s.reverse_complement()
             samples[combined_barcode] = sample_name
 
-    s5_prefix = "s5_demultiplex"
     os.makedirs(os.path.join(hivdrm_work_dir, s5_prefix), exist_ok = True)
 
     filedata = {filename: open(os.path.join(hivdrm_work_dir, s5_prefix, f"{filename}.fa"), "wt") for filename in samples.values()}
@@ -143,22 +143,31 @@ def s6_create_blast_db(reference_fasta):
 def s7_blastn_xml(qry, base):
     """ run blastn with xml output qry and base are absolute paths """
     s7_prefix = "s7_blast_result"
+    os.makedirs(os.path.join(hivdrm_work_dir, s7_prefix), exist_ok = True)
     qry_file = os.path.basename(qry)
     base_file = os.path.basename(base)
     result_file = f"{qry_file}_vs_{base_file}.xml"
     result_path = os.path.realpath(os.path.join(hivdrm_work_dir, s7_prefix, result_file))
-    os.path.isfile(result_path):
+    if os.path.isfile(result_path):
         os.remove(result_path)
     cmd = (f"blastn -num_threads 1 "
-           f"-query {qry}"
-           f"-db {base}"
-           f"-out {result_path}" \
-           f"-dust no" \
-           f"-num_alignments 1" \
+           f"-query {qry} "
+           f"-db {base} "
+           f"-out {result_path} " \
+           f"-dust no " \
+           f"-num_alignments 1 " \
            f"-outfmt 5")
+    subprocess.check_call(cmd, shell = True)
 
-def s7_all():
-    
+def s7_blast_all(barcodes_csv, reference_path):
+    with open(barcodes_csv, "rt") as csvfile:
+        csvreader = csv.reader(csvfile)
+        # skip header
+        next(csvfile, None)
+        for row in csvreader:
+            sample_fa = row[0] + ".fa"
+            qry_path = os.path.realpath(os.path.join(hivdrm_work_dir, s5_prefix, sample_fa))
+            s7_blastn_xml(qry_path, reference_path)
 
 def get_args(description):
     parser = argparse.ArgumentParser(description = description, usage = "%(prog)s [options]")
@@ -180,4 +189,5 @@ if __name__ == "__main__":
     step4_out = s4_trim_left_right(step3_out)
     step5_out = s5_demultiplex_samples(step4_out, args.barcodes)
     s6_out_fasta_ref = s6_create_blast_db(args.reference)
+    s7_blast_all(args.barcodes, s6_out_fasta_ref)
 
