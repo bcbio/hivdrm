@@ -9,7 +9,10 @@ import sys
 import gzip
 import shutil
 import argparse
+import textwrap
 import subprocess
+from collections import Counter
+from pathlib import Path
 
 from Bio.Seq import Seq
 from Bio import SeqIO
@@ -20,16 +23,23 @@ hivdrm_work_dir = "_hivdrm_tmp"
 s5_prefix = "s5_demultiplex"
 s7_prefix = "s7_blast_result"
 s8_prefix = "s8_consensus"
+s9_prefix = "s9_sierrapy"
 samples = []
+
+def touch(file_name):
+    cf = Path(file_name)
+    cf.touch(exist_ok = True)
 
 def s1_rc_and_concatenate(r1, r2):
     """Reverse complement r2 and merge with r1 into a long amplicon"""
-    i = 0
-    control_file = os.path.join(hivdrm_work_dir, "step1.one")
+    print("Step1 - RC and concatenate")
+
+    control_file = os.path.join(hivdrm_work_dir, "step1.done")
     result_file = os.path.realpath(os.path.join(hivdrm_work_dir, "step1.fq.gz"))
     if os.path.exists(control_file) and os.path.exists(result_file):
         return result_file
 
+    i = 0
     with gzip.open(r1, "rt") as fq1, \
          gzip.open(r2, "rt") as fq2, \
          gzip.open(result_file, "wt") as out:
@@ -47,7 +57,7 @@ def s1_rc_and_concatenate(r1, r2):
                 i = -1
             out.write(out_buf + "\n")
             i += 1
-    os.path.touch(control_file, exist_ok = True)
+    touch(control_file)
     return result_file
 
 def is_good_read(a_read, min_q, min_pct):
@@ -61,41 +71,60 @@ def is_good_read(a_read, min_q, min_pct):
 def s2_fastq_quality_filter(file_fq_gz, min_q = 20, min_pct = 90):
     """implementation of fastx_toolkit/fastq_quality_filter
        file is of single reads - amplicons  """
+    print("Step2 - quality filter")
     i = 0
     control_file = os.path.join(hivdrm_work_dir, "step2.done")
     result_file = os.path.join(hivdrm_work_dir, "step2.fq.gz")
     if os.path.exists(control_file) and os.path.exists(result_file):
         return result_file
-        
+
     with gzip.open(file_fq_gz, "rt") as fq, gzip.open(result_file, "wt") as out:
         for record in SeqIO.parse(fq, "fastq"):
             if is_good_read(record, min_q = min_q, min_pct = min_pct):
                 out.write(record.format("fastq"))
-    os.path.touch(control_file, exist_ok = True)
+    touch(control_file)
     return result_file
 
 def s3_fastq_to_fasta(file_fq_gz):
     """remove quality values"""
+    print("Step3 - fastq to fasta ")
+    control_file = os.path.join(hivdrm_work_dir, "step3.done")
     result_file = os.path.join(hivdrm_work_dir, "step3.fa")
+
+    if os.path.exists(control_file) and os.path.exists(result_file):
+        return result_file
+
     with gzip.open(file_fq_gz, "rt") as fq , open(result_file, "wt") as f_out:
         for record in SeqIO.parse(fq, "fastq"):
             SeqIO.write(record, f_out, "fasta-2line")
+    touch(control_file)
     return result_file
 
 def s4_trim_left_right(file_fa, bp_left = 4, bp_right = 4):
     """trim bp from left and right to align barcodes exactly to the edges"""
+    print("Step4 - Trim left right ")
+    control_file = os.path.join(hivdrm_work_dir, "step4.done")
     result_file = os.path.join(hivdrm_work_dir, "step4.fa")
+
+    if os.path.exists(control_file) and os.path.exists(result_file):
+        return result_file
+
     with open(file_fa, "rt") as fa_in, open(result_file, "wt") as fa_out:
         for record in SeqIO.parse(fa_in, "fasta-2line"):
             if len(record.seq) > bp_left + bp_right:
                 record.seq = record.seq[bp_left:][:-bp_right]
                 SeqIO.write(record, fa_out, "fasta-2line")
+    touch(control_file)
     return result_file
 
 def s5_demultiplex_samples(file_fa, barcodes_csv):
     """ demultiplex samples based on dual barcodes """
+    print("Step5 - demultiplex samples")
     samples_barcode = {}
     result_file = "step5.stats.csv"
+    control_file = os.path.join(hivdrm_work_dir, "step5.done")
+
+    # still populate samples even the demultiplex work is done
     with open(barcodes_csv, "rt") as csvfile:
         csvreader = csv.reader(csvfile)
         n_row = len(csvfile.readlines())
@@ -123,6 +152,9 @@ def s5_demultiplex_samples(file_fa, barcodes_csv):
 
     os.makedirs(os.path.join(hivdrm_work_dir, s5_prefix), exist_ok = True)
 
+    if os.path.exists(control_file) and os.path.exists(result_file):
+        return result_file
+
     filedata = {filename: open(os.path.join(hivdrm_work_dir, s5_prefix, f"{filename}.fa"), "wt") for filename in samples_barcode.values()}
     unmatched = open(os.path.join(hivdrm_work_dir, s5_prefix, "unmatched.fa"), "wt")
 
@@ -137,10 +169,12 @@ def s5_demultiplex_samples(file_fa, barcodes_csv):
     for f in filedata.values():
         f.close()
     unmatched.close()
-
+    touch(control_file)
+    touch(result_file)
     return result_file
 
 def s6_create_blast_db(reference_fasta):
+    print("Step6 - create blast db ")
     if shutil.which("makeblastdb") is None:
         print("makeblastdb is not found in the PATH. Load blast module or install NCBI blast")
         exit(1)
@@ -148,24 +182,31 @@ def s6_create_blast_db(reference_fasta):
     os.makedirs(blastdb_dir, exist_ok = True)
     bname = os.path.basename(reference_fasta)
     blastdb_path = os.path.join(blastdb_dir, bname)
+
+    control_file = os.path.join(hivdrm_work_dir, "step6.done")
+    if os.path.exists(control_file) and os.path.exists(blastdb_path):
+        return blastdb_path
+
     shutil.copyfile(reference_fasta, blastdb_path)
     #prev_dir = os.getcwd()
     #os.chdir(blastdb_dir)
     cmd = f"makeblastdb -in {blastdb_path} -dbtype nucl"
     subprocess.check_call(cmd, shell = True)
     #os.chdir(prev_dir)
+    touch(control_file)
     return blastdb_path
 
 def s7_blastn_xml(qry, base):
     """ run blastn with xml output qry and base are absolute paths """
+    print("Step7 ... :" + qry)
     os.makedirs(os.path.join(hivdrm_work_dir, s7_prefix), exist_ok = True)
     qry_file = os.path.basename(qry)
     base_file = os.path.basename(base)
     sample_name = os.path.splitext(qry_file)[0]
     result_file = f"{sample_name}.xml"
     result_path = os.path.realpath(os.path.join(hivdrm_work_dir, s7_prefix, result_file))
-    if os.path.isfile(result_path):
-        os.remove(result_path)
+    if os.path.exists(result_path):
+        return result_file
     cmd = (f"blastn -num_threads 1 "
            f"-query {qry} "
            f"-db {base} "
@@ -174,6 +215,7 @@ def s7_blastn_xml(qry, base):
            f"-num_alignments 1 " \
            f"-outfmt 5")
     subprocess.check_call(cmd, shell = True)
+    return result_file
 
 def s7_blast_all(barcodes_csv, reference_path):
     with open(barcodes_csv, "rt") as csvfile:
@@ -207,22 +249,26 @@ def get_consensus(family):
         s_column = ""
         for s in family:
             s_column += s[i]
-            res = dict(Counter(s_column).most_common())
-            top_allele = list(res.keys())[0]
-            top_freq = res[top_allele]/len(family)
-            #reference has an insert - but deleting makes fragments of different lengths
-            #if top_allele == "-" and top_freq >= 0.5:
-            #    continue
-            if top_freq == 1.0:
-                s_consensus += top_allele
-            else:
-                second_allele = list(res.keys())[1]
-                s_consensus += second_allele
+        res = dict(Counter(s_column).most_common())
+        top_allele = list(res.keys())[0]
+        top_freq = res[top_allele]/len(family)
+        #reference has an insert - but deleting makes fragments of different lengths
+        #if top_allele == "-" and top_freq >= 0.5:
+        #    continue
+        n_alleles = len(list(res.keys()))
+        if top_freq == 1.0 and n_alleles == 1:
+            s_consensus += top_allele
+        elif n_alleles > 1:
+            second_allele = list(res.keys())[1]
+            s_consensus += second_allele
+        else:
+            print(f"Error: {i} {s_column} {top_freq} {res} {family}")
+            s_consensus += "N"
             # else:
             # s_consensus += "N"
     return s_consensus
 
-def s8_make_consensus(sample):
+def s8_make_consensus(sample, min_family_size = 5, max_family_size = 20):
     os.makedirs(os.path.join(hivdrm_work_dir, s8_prefix), exist_ok = True)
     sample_xml = sample + ".xml"
     blast_xml = os.path.realpath(os.path.join(hivdrm_work_dir, s7_prefix, sample_xml))
@@ -278,14 +324,14 @@ def s8_make_consensus(sample):
         #    break
     results = {}
     consensus_fasta = sample + ".consensus.fasta"
-    result_file = os.path.join(s8_prefix, consensus_fasta)
+    result_file = os.path.join(hivdrm_work_dir, s8_prefix, consensus_fasta)
     if os.path.exists(result_file):
         os.remove(result_file)
 
     for umi in families:
         filename = umi + ".fasta"
         family = families[umi]
-        if len(family) > 4 and len(family) < 21:
+        if len(family) >= min_family_size and len(family) <= max_family_size:
             lens = {len(s) for s in family}
             if len(lens) == 1:
                 # lens are the same
@@ -307,8 +353,49 @@ def s8_make_consensus(sample):
     result_handle.close()
 
 def s8_make_consensus_all():
+    control_file = os.path.join(hivdrm_work_dir, "step8.done")
+    if os.path.exists(control_file):
+        return
     for s in samples:
         s8_make_consensus(s)
+    touch(control_file)
+
+def s9_write_simple_mutations():
+    os.makedirs(os.path.join(hivdrm_work_dir, s9_prefix), exist_ok = True)
+    simple_mutations = os.path.join(hivdrm_work_dir, s9_prefix, "simple_mutations.gql")
+    if os.path.exists(simple_mutations):
+        return
+    with open(simple_mutations, "wt") as fout: 
+        fout.writelines(textwrap.dedent("""\
+                           inputSequence {
+                           header,
+                           },
+                           mutations {
+                           gene {name}
+                           primaryType
+                           text
+                           }"""))
+
+def s9_sierrapy(sample):
+    os.makedirs(os.path.join(hivdrm_work_dir, s9_prefix), exist_ok = True)
+    consensus_fasta = sample + ".consensus.fasta"
+    consensus_path = os.path.join(hivdrm_work_dir, s8_prefix, consensus_fasta)
+    result_json = sample + ".json"
+    result_path = os.path.join(hivdrm_work_dir, s9_prefix, result_json)
+    if os.path.exists(result_path):
+        return
+    simple_mutations = os.path.join(hivdrm_work_dir, s9_prefix, "simple_mutations.gql")
+    cmd = (f"sierrapy fasta -q {simple_mutations} "
+           f"-o {result_path} {consensus_path}")
+    subprocess.check_call(cmd, shell = True)
+
+def s9_sierrapy_all():
+    control_file = os.path.join(hivdrm_work_dir, "step9.done")
+    if os.path.exists(control_file):
+        return
+    for sample in samples:
+        s9_sierrapy(sample)
+    touch(control_file)
 
 def get_args(description):
     parser = argparse.ArgumentParser(description = description, usage = "%(prog)s [options]")
@@ -331,5 +418,7 @@ if __name__ == "__main__":
     step5_out = s5_demultiplex_samples(step4_out, args.barcodes)
     s6_out_fasta_ref = s6_create_blast_db(args.reference)
     s7_blast_all(args.barcodes, s6_out_fasta_ref)
-    #s8_make_consensus("S01")
+    s8_make_consensus_all()
+    s9_write_simple_mutations()
+    s9_sierrapy_all()
 
