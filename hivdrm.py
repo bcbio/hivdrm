@@ -20,12 +20,16 @@ from Bio import SeqIO
 from Bio.SeqIO import FastaIO
 from Bio.Blast import NCBIXML
 
+from Bio import AlignIO
+from Bio.Align import AlignInfo
+
 hivdrm_work_dir = "_hivdrm_tmp"
 s5_prefix = "s5_demultiplex"
 s7_prefix = "s7_blast_result"
 s8_prefix = "s8_consensus"
 s9_prefix = "s9_sierrapy"
 s10_prefix = "s10_drlink"
+s11_prefix = "s11_freq_table"
 samples = []
 
 def touch(file_name):
@@ -440,6 +444,69 @@ def s10_drlink_all():
                 df.to_excel(writer, sheet_name = tsv_file, index = False)
     touch(control_file)
 
+def s11_freq_table(sample):
+    """calculate allele frequencies along the alignmen"""
+    print(f"step11: freq table for {sample}")
+    s11_dir = os.path.join(hivdrm_work_dir, s11_prefix)
+    os.makedirs(s11_dir, exist_ok = True)
+
+    alignment_file = sample + ".consensus.fasta"
+    alignment_path = os.path.join(hivdrm_work_dir, s8_prefix, alignment_file)
+    alignment = AlignIO.read(alignment_path, 'fasta')
+    summary_align = AlignInfo.SummaryInfo(alignment)
+    freqs = []
+    j = 0
+    result_file = sample +".all_alleles.freq.tsv"
+    result_path = os.path.join(s11_dir, result_file)
+    
+    fout = open(result_path, "w")
+    for i in range(alignment.get_alignment_length()):
+        s_column = summary_align.get_column(i)
+        res = dict(Counter(s_column).most_common())
+        top_allele = list(res.keys())[0]
+        top_freq = round(res[top_allele]/len(s_column), 2)
+        freqs.append(top_freq)
+        fout.write(f"{j+1}\t")
+        #print(f"{j+1}\t", end = "")
+        j += 1
+        a_res = []
+        for f in res:
+            freq = round(res[f]/len(s_column), 2)
+            a_res.append(f"{f}={freq}")
+            #print("\t".join(a_res))
+        fout.write("\t".join(a_res) + "\n")
+    fout.close()
+
+    res_freqs = dict(Counter(freqs).most_common())
+
+    result_file = sample + ".top_allele.freq.tsv"
+    result_path = os.path.join(s11_dir, result_file)
+    with open(result_path, "w") as f:
+        for d in res_freqs:
+            f.write(f"{d}\t{res_freqs[d]}\n")
+
+def s11_freq_table_all():
+    control_file = os.path.join(hivdrm_work_dir, "step11.done")
+    if os.path.exists(control_file):
+        return
+    for sample in samples:
+        s11_freq_table(sample)
+
+    # combine into one excel
+    df = pd.DataFrame()
+    s11_dir = os.path.join(hivdrm_work_dir, s11_prefix)
+    tsvs = os.listdir(s11_dir)
+    with pd.ExcelWriter("freq.xlsx", engine = "openpyxl") as writer:
+        for tsv_file in sorted(tsvs):
+            tsv_path = os.path.join(s11_dir, tsv_file)
+            if tsv_file.endswith(".all_alleles.freq.tsv"):
+                # could be POS F(A) F(T) F(G) F(C) F(-) F(N)
+                df = pd.read_csv(tsv_path, sep = '\t', header = None, names = range(7))
+            else:
+                df = pd.read_csv(tsv_path, sep = "\t", header = None)
+            df.to_excel(writer, sheet_name = tsv_file, index = False, header = False)
+    touch(control_file)
+
 def get_args(description):
     parser = argparse.ArgumentParser(description = description, usage = "%(prog)s [options]")
     parser.add_argument("--barcodes", required = True, help = "barcodes.csv")
@@ -465,4 +532,4 @@ if __name__ == "__main__":
     s9_write_simple_mutations()
     s9_sierrapy_all()
     s10_drlink_all()
-
+    s11_freq_table_all()
