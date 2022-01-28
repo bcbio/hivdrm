@@ -8,6 +8,7 @@ import csv
 import sys
 import gzip
 import shutil
+import pandas as pd
 import argparse
 import textwrap
 import subprocess
@@ -24,6 +25,7 @@ s5_prefix = "s5_demultiplex"
 s7_prefix = "s7_blast_result"
 s8_prefix = "s8_consensus"
 s9_prefix = "s9_sierrapy"
+s10_prefix = "s10_drlink"
 samples = []
 
 def touch(file_name):
@@ -397,6 +399,47 @@ def s9_sierrapy_all():
         s9_sierrapy(sample)
     touch(control_file)
 
+def s10_drlink_perl(sample):
+    print(f"step10: {sample}")
+    s10_dir = os.path.join(hivdrm_work_dir, s10_prefix)
+    os.makedirs(s10_dir, exist_ok = True)
+    drlink_perl = os.path.join(os.path.dirname(__file__), "scripts", "HIV-DRLink_github.pl")
+    result_json = sample + ".json"
+    json_path = os.path.join(hivdrm_work_dir, s9_prefix, result_json)
+    cmd = (f"perl {drlink_perl} {json_path}")
+    drlink_stats = os.path.join(hivdrm_work_dir, "drlink_stats.tsv")
+    with open(drlink_stats, "a") as fout:
+        fout.write(sample + "\t")
+        fout.seek(2)
+        subprocess.check_call(cmd, shell = True, stdout = fout)
+    result_file = sample + ".json_DRM.tsv"
+    result_path = os.path.join(hivdrm_work_dir, s9_prefix, result_file)
+    if os.path.exists(result_path):
+        result_drm = sample + ".drm.tsv"
+        shutil.move(result_path, os.path.join(s10_dir, result_drm))
+
+# requires pip install openpyxl
+def s10_drlink_all():
+    control_file = os.path.join(hivdrm_work_dir, "step10.done")
+    if os.path.exists(control_file):
+        return
+    for sample in samples:
+        s10_drlink_perl(sample)
+    # combine into one excel
+    df = pd.DataFrame()
+    s10_dir = os.path.join(hivdrm_work_dir, s10_prefix)
+    tsvs = os.listdir(s10_dir)
+    with pd.ExcelWriter("DRM.xlsx", engine = "openpyxl") as writer:
+        tsv_path = os.path.join(hivdrm_work_dir, "drlink_stats.tsv")
+        df = pd.read_csv(tsv_path, sep = '\t', names = ["sample", "summary"])
+        df.to_excel(writer, sheet_name = "drlink_stats", index = False)
+        for tsv_file in sorted(tsvs):
+            if tsv_file.endswith(".tsv"):
+                tsv_path = os.path.join(s10_dir, tsv_file)
+                df = pd.read_csv(tsv_path, sep = '\t', skiprows = 1)
+                df.to_excel(writer, sheet_name = tsv_file, index = False)
+    touch(control_file)
+
 def get_args(description):
     parser = argparse.ArgumentParser(description = description, usage = "%(prog)s [options]")
     parser.add_argument("--barcodes", required = True, help = "barcodes.csv")
@@ -421,4 +464,5 @@ if __name__ == "__main__":
     s8_make_consensus_all()
     s9_write_simple_mutations()
     s9_sierrapy_all()
+    s10_drlink_all()
 

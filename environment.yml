@@ -5,3 +5,5 @@ channels:
 dependencies:
   - biopython
   - blast
+  - perl
+  - perl-json
