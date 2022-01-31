@@ -5,5 +5,12 @@ channels:
 dependencies:
   - biopython
   - blast
+  - numpy
+  - pandas
   - perl
   - perl-json
+  - pip
+  - python=3.10
+  - pip:
+    - sierrapy
+    - openpyxl
