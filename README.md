@@ -4,11 +4,28 @@ Detect HIV Drug Resitant Mutations using amplicon sequencing data
 A production-ready re-implementation of https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7699007/,
 https://github.com/Wei-Shao/HIV-DRLink.
 
-## How to run
+## Install
+
+- Install conda (if not already present): https://docs.conda.io/projects/conda/en/latest/user-guide/install/linux.html
+- Install mamba: `conda install mamba -n base -c conda-forge`
+- Clone hivdrm: `git clone https://github.com/bcbio/hivdrm.git`
+- `cd hivdrm`
+- Create conda environment to run hivdrm: `mamba env create -n hivdrm_production --file environment.yml`
+- add hivdrm to PATH: `export PATH=/path/to/hivdrm:$PATH` in .bashrc or .bash_profile
+
+## Run
 
 ```bash
-hivdrm.py --barcodes barcodes.csv --reference reference.edited.fasta r1.fq.gz r2.fq.gz
+conda activate hivdrm_production
+cd /path/project
+hivdrm.py \
+--barcodes barcodes.csv \
+--reference reference.edited.fasta \
+--threads 10 \
+r1.fq.gz r2.fq.gz
+conda deactivate
 ```
+Some clusters/batch systems require `source activate/deactivate` instead of `conda activate/deactivate`.
 
 Example of barcodes.csv:
 ```
@@ -34,8 +51,14 @@ Example of reference.fasta:
 CGCCTGAATCCATATAACACTCCAATATTTGCCATAAAAAAGAAGGACAGTACTAAGTGGAGAAAATTAGTAGATTTCAGGGAACTTAATAAAAGAACTCAAGACTTTTGGGAAGTTCAATTAGGAATACCACATCCAGCAGGATTAAAAAAGAAAAAATCAGTGACAGTACTGGATGTGGGGGATGCATATTTTTCAGTTCCTTTAGATGAAGGCTTCAGAAAATATACTGCATTCACCATACCTAGTATAAACAATGAAACACCAGGGATTAGATATCAATATAATGTGCTCCCAGGATCACCAGCAATATTCCAAAGTAGCATGACAAAAATCTTAGAGCCCTTTAGAGCAAGAAATCCAGAAATAGTCATCTATCAATATATGGATGACTTGTATGTGGGATCTGACTTAGAAATAGGGCAACATAGAGCAAAAATAGAGGAATTAAGAGCACATTTATTAGGGTGGGGATTTACCACWCCAGACAAGAAACATCAGAAGGAACCCCCATTTCTTTGGATGGGGTACGAACTCCATCCTGACAAATGGACAGTNNNNNNNNNNCTAGCAGGATGACTTCGATACCCATGGC
 ```
 
+Barcode processing steps for libraries with multiple samples and blastn step benefit a lot from multithreading. Consider running on a server/cluster with 10 threads/20G RAM.
+
 ## Output
 
 - DRM.xlsx - 1st sheet - DRM stats, then one sheet per sample
 - freq.xlsx - barcode stats, per sample all and top allele frequencies
 - `_hivdrm_tmp` - intermediate files from all the steps
+
+## Uninstall
+
+- `conda remove --name hivdrm_production --all`
