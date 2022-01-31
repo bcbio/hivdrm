@@ -37,4 +37,5 @@ CGCCTGAATCCATATAACACTCCAATATTTGCCATAAAAAAGAAGGACAGTACTAAGTGGAGAAAATTAGTAGATTTCAG
 ## Output
 
 - DRM.xlsx - 1st sheet - DRM stats, then one sheet per sample
-- freq.xlsx - individual and top allele frequencies
+- freq.xlsx - barcode stats, per sample all and top allele frequencies
+- `_hivdrm_tmp` - intermediate files from all the steps
