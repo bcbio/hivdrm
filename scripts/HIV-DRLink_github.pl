@@ -51,6 +51,7 @@ $outfile = $filename."_Mutations.fas";
     K103S => 1,
     V106A => 1,
     V106M => 1,
+    V108I => 1,
     Y115F => 1,
     Q151M => 1,
     Y181C => 1,
@@ -73,7 +74,8 @@ $outfile = $filename."_Mutations.fas";
     M230L => 1,
     K219R => 1,
     L234I => 1,
-    P236L => 1
+    P236L => 1,
+    P225H => 1
     );
 
 $input_seq_count = 0;   
