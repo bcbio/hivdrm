@@ -53,6 +53,7 @@ $outfile = $filename."_Mutations.fas";
     V106M => 1,
     V108I => 1,
     Y115F => 1,
+    E138A => 1,
     Q151M => 1,
     Y181C => 1,
     Y181I => 1,
